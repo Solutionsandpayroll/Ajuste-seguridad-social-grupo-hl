@@ -21,8 +21,19 @@ const PIVOT_CONFIGS = [
 
 //  Leer Base Empleados Conceptos (.xls / .xlsx) 
 
+async function readFileSafe(file) {
+  try {
+    return await file.arrayBuffer()
+  } catch (e) {
+    if (e.name === 'NotReadableError' || String(e.message).toLowerCase().includes('permission')) {
+      throw new Error(`No se puede leer "${file.name}". Cierra el archivo en Excel u otro programa y vuelve a intentarlo.`)
+    }
+    throw e
+  }
+}
+
 async function leerBaseConceptos(baseFile) {
-  const data = await baseFile.arrayBuffer()
+  const data = await readFileSafe(baseFile)
   const workbook = XLSX.read(data)
   const ws = workbook.Sheets[workbook.SheetNames[0]]
   const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
@@ -245,7 +256,7 @@ function buildAjusteRows(records, hStyleIdx, hoja1Lookup = null) {
 //  Rutina compartida: procesar filas del fuente 
 
 async function procesarFilasFuente(sourceFile) {
-  const srcBuffer = await sourceFile.arrayBuffer()
+  const srcBuffer = await readFileSafe(sourceFile)
   const srcWb = new ExcelJS.Workbook()
   await srcWb.xlsx.load(srcBuffer)
   const srcSheet = srcWb.getWorksheet(1)
@@ -399,7 +410,7 @@ async function escribirHoja1(zip, wbXml, relsXml, hoja1Rows) {
 //  Paso 2: releer CauPag del Paso 1 y escribir hoja Ajuste 
 
 export async function generarPaso2(paso1File, baseFile = null) {
-  const buf = await paso1File.arrayBuffer()
+  const buf = await readFileSafe(paso1File)
 
   // Leer hoja CauPag (datos estáticos escritos en paso 1, no depende de pivot tables)
   const wb = new ExcelJS.Workbook()
@@ -494,7 +505,7 @@ export async function generarPaso2(paso1File, baseFile = null) {
   }
 
   // Filtro final: quitar registros con Dif=0 Y misma Entidad Causada y Pagada
-  if (records.length === 0) throw new Error('No se encontraron diferencias entre causado y pagado. No se generó la hoja Ajuste.')
+  // Si no hay registros se continúa igual para generar el archivo vacío
 
   // Leer Base Empleados Conceptos si se proporcionó
   let hoja1Rows = []
@@ -514,7 +525,7 @@ export async function generarPaso2(paso1File, baseFile = null) {
     return normAdmin(rec.adminCausado) !== normAdmin(rec.adminPagado)
   })
 
-  if (recordsFinal.length === 0) throw new Error('No se encontraron diferencias entre causado y pagado. No se generó la hoja Ajuste.')
+  // Si no hay registros se continúa igual para generar el archivo vacío
 
   // Escribir hoja Ajuste en el mismo archivo
   const zip = await JSZip.loadAsync(buf)
